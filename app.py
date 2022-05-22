@@ -79,42 +79,45 @@ class App:
                 button.func()
 
     def verify(self):
-        key = load_pem_public_key(bytes(self.verify_key, 'utf-8'))
-        if isinstance(key, rsa.RSAPublicKey):
-            message = open(self.verify_file, "rb").read()
-            signature = open("signature.sgn", "rb").read()
-            try:
-                key.verify(
-                    signature,
-                    message,
+        if isinstance(self.verify_key, str):
+            key = load_pem_public_key(bytes(self.verify_key, 'utf-8'))
+            if isinstance(key, rsa.RSAPublicKey):
+                message = open(self.verify_file, "rb").read()
+                signature = open("signature.sgn", "rb").read()
+                try:
+                    key.verify(
+                        signature,
+                        message,
+                        padding.PSS(
+                            mgf=padding.MGF1(hashes.SHA256()),
+                            salt_length=padding.PSS.MAX_LENGTH
+                        ),
+                        hashes.SHA256()
+                    )
+                    print("git")
+                except:
+                    print("Oj kolezko cos tu sciemniasz scamerze hinduski")
+            else:
+                print("Choose a valid public key.")
+
+    def sign(self):
+        if isinstance(self.sign_key, str):
+            key = load_pem_private_key(bytes(self.sign_key, 'utf-8'), password=None)
+            if isinstance(key, rsa.RSAPrivateKey):
+                signature = key.sign(
+                    bytes(open(self.sign_file).read(), 'utf-8'),
                     padding.PSS(
                         mgf=padding.MGF1(hashes.SHA256()),
                         salt_length=padding.PSS.MAX_LENGTH
                     ),
                     hashes.SHA256()
                 )
-                print("git")
-            except:
-                print("Oj kolezko cos tu sciemniasz scamerze hinduski")
-        else:
-            print("Choose a valid public key.")
-
-    def sign(self):
-        key = load_pem_private_key(bytes(self.sign_key, 'utf-8'), password=None)
-        if isinstance(key, rsa.RSAPrivateKey):
-            signature = key.sign(
-                bytes(open(self.sign_file).read(), 'utf-8'),
-                padding.PSS(
-                    mgf=padding.MGF1(hashes.SHA256()),
-                    salt_length=padding.PSS.MAX_LENGTH
-                ),
-                hashes.SHA256()
-            )
-            file = open("signature.sgn", "wb")
-            file.write(signature)
-            file.close()
-        else:
-            print("Choose a valid private key.")
+                file = open("signature.sgn", "wb")
+                file.write(signature)
+                file.close()
+                print("Podpisane legancko w pewien sposob de besta.")
+            else:
+                print("Choose a valid private key.")
 
     def chose_verification_file(self):
         self.verify_file = chosen_file()
