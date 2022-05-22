@@ -1,4 +1,8 @@
-from cryptography.hazmat.primitives.serialization import load_pem_private_key, load_pem_public_key
+import datetime
+
+from cryptography import x509
+from cryptography.hazmat._oid import NameOID
+from cryptography.hazmat.primitives.serialization import load_pem_private_key, load_pem_public_key, pkcs7
 from button import Button
 from helpers import *
 from cryptography.hazmat.primitives import serialization, hashes
@@ -13,15 +17,15 @@ class App:
         self.font = pygame.font.SysFont("Arial", 16)
 
         self.verify_file = None
-        self.verify_key = None
+        self.certificate = None
         self.sign_file = None
         self.sign_key = None
 
-        button1 = Button(self.window, 20, 160, 100, 30, "select file", self.chose_verification_file)
-        button2 = Button(self.window, 470, 160, 100, 30, "select file", self.chose_signing_file)
-        button3 = Button(self.window, 20, 280, 100, 30, "select key", self.chose_verification_key)
-        button4 = Button(self.window, 470, 280, 100, 30, "select key", self.chose_signing_key)
-        button5 = Button(self.window, 580, 280, 120, 30, "generate keys", self.generate_key)
+        button1 = Button(self.window, 20, 160, 100, 30, "select file", self.chosen_verification_file)
+        button2 = Button(self.window, 470, 160, 100, 30, "select file", self.chosen_signing_file)
+        button3 = Button(self.window, 20, 280, 100, 30, "select key", self.chosen_certificate)
+        button4 = Button(self.window, 470, 280, 100, 30, "select key", self.chosen_signing_key)
+        button5 = Button(self.window, 580, 280, 120, 30, "generate key", self.generate_key)
         button6 = Button(self.window, 20, 330, 400, 30, "verify", self.verify)
         button7 = Button(self.window, 470, 330, 400, 30, "sign", self.sign)
         self.buttons = [button1, button2, button3, button4, button5, button6, button7]
@@ -50,8 +54,8 @@ class App:
         pygame.draw.rect(self.window, (70, 70, 70), file_box)
         pygame.draw.rect(self.window, (70, 70, 70), key_box)
         draw_text(self.window, file_box, self.verify_file if self.verify_file else "No file selected", self.font)
-        draw_text(self.window, key_box, "Public key selected" if self.verify_key else "No key selected", self.font)
-        draw_text(self.window, pygame.Rect(20, 200, 100, 30), "Public key:", self.font)
+        draw_text(self.window, key_box, "Certificate selected" if self.certificate else "No certificate selected", self.font)
+        draw_text(self.window, pygame.Rect(20, 200, 100, 30), "Certificate:", self.font)
 
     def draw_signing(self):
         title_box = pygame.Rect(470, 10, 400, 70)
@@ -78,9 +82,61 @@ class App:
             if button.mouse_over(pygame.mouse.get_pos()):
                 button.func()
 
+    def create_certificate(self, key):
+        subject = issuer = x509.Name([
+            x509.NameAttribute(NameOID.COUNTRY_NAME, u"PL"),
+            x509.NameAttribute(NameOID.STATE_OR_PROVINCE_NAME, u"Pomorskie"),
+            x509.NameAttribute(NameOID.LOCALITY_NAME, u"Gdańsk"),
+            x509.NameAttribute(NameOID.ORGANIZATION_NAME, u"Politechnika Gdańska"),
+            x509.NameAttribute(NameOID.COMMON_NAME, u"MNMWJW"),
+        ])
+        cert = x509.CertificateBuilder().subject_name(
+            subject
+        ).issuer_name(
+            issuer
+        ).public_key(
+            key.public_key()
+        ).serial_number(
+            x509.random_serial_number()
+        ).not_valid_before(
+            datetime.datetime.utcnow()
+        ).not_valid_after(
+            # Our certificate will be valid for 10 days
+            datetime.datetime.utcnow() + datetime.timedelta(days=10)
+        ).add_extension(
+            x509.SubjectAlternativeName([x509.DNSName(u"localhost")]),
+            critical=False,
+            # Sign our certificate with our private key
+        ).sign(key, hashes.SHA256())
+        # Write our certificate out to disk.
+        with open("certificate.pem", "wb") as f:
+            f.write(cert.public_bytes(serialization.Encoding.PEM))
+
+    def sign(self):
+        #if every field is not empty; TODO
+        if self.sign_key:
+            key = load_pem_private_key(bytes(self.sign_key, 'utf-8'), password=None)
+            if isinstance(key, rsa.RSAPrivateKey):
+                self.create_certificate(key)
+                signature = key.sign(
+                    bytes(open(self.sign_file).read(), 'utf-8'),
+                    padding.PSS(
+                        mgf=padding.MGF1(hashes.SHA256()),
+                        salt_length=padding.PSS.MAX_LENGTH
+                    ),
+                    hashes.SHA256()
+                )
+                file = open("signature.sgn", "wb")
+                file.write(signature)
+                file.close()
+                print("Podpisane legancko w pewien sposob de besta.")
+            else:
+                print("Choose a valid private key.")
+
     def verify(self):
-        if isinstance(self.verify_key, str):
-            key = load_pem_public_key(bytes(self.verify_key, 'utf-8'))
+        if self.certificate:
+            cert = x509.load_pem_x509_certificate(self.certificate)
+            key = cert.public_key()
             if isinstance(key, rsa.RSAPublicKey):
                 message = open(self.verify_file, "rb").read()
                 signature = open("signature.sgn", "rb").read()
@@ -100,36 +156,21 @@ class App:
             else:
                 print("Choose a valid public key.")
 
-    def sign(self):
-        if isinstance(self.sign_key, str):
-            key = load_pem_private_key(bytes(self.sign_key, 'utf-8'), password=None)
-            if isinstance(key, rsa.RSAPrivateKey):
-                signature = key.sign(
-                    bytes(open(self.sign_file).read(), 'utf-8'),
-                    padding.PSS(
-                        mgf=padding.MGF1(hashes.SHA256()),
-                        salt_length=padding.PSS.MAX_LENGTH
-                    ),
-                    hashes.SHA256()
-                )
-                file = open("signature.sgn", "wb")
-                file.write(signature)
-                file.close()
-                print("Podpisane legancko w pewien sposob de besta.")
-            else:
-                print("Choose a valid private key.")
-
-    def chose_verification_file(self):
+    def chosen_verification_file(self):
         self.verify_file = chosen_file()
 
-    def chose_signing_file(self):
+    def chosen_signing_file(self):
         self.sign_file = chosen_file()
 
-    def chose_verification_key(self):
-        self.verify_key = open(chosen_key()).read()
+    def chosen_certificate(self):
+        result = chosen_file((("pem", "*.pem"),))
+        if result:
+            self.certificate = open(result, "rb").read()
 
-    def chose_signing_key(self):
-        self.sign_key = open(chosen_key()).read()
+    def chosen_signing_key(self):
+        result = chosen_file((("pvk", "*.pvk"),))
+        if result:
+            self.sign_key = open(result, "rb").read()
 
     def generate_key(self):
         key = rsa.generate_private_key(
@@ -145,12 +186,5 @@ class App:
         file_out = open("generated_private_key.pvk", "wb")
         file_out.write(private_key)
         file_out.close()
-        public_key = key.public_key().public_bytes(
-            encoding=serialization.Encoding.PEM,
-            format=serialization.PublicFormat.SubjectPublicKeyInfo
-        )
-        file_out = open("generated_public_key.plk", "wb")
-        file_out.write(public_key)
-        file_out.close()
-
-        self.sign_key = private_key
+        print("Wygenerowano klucz.")
+        self.sign_key = str(private_key, 'utf-8')
