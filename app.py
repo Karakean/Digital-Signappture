@@ -92,7 +92,7 @@ class App:
         "No key selected", self.font)
         draw_text(self.window, pygame.Rect(470, 200, 100, 30), "Private key:", self.font)
         draw_text(self.window, pygame.Rect(470, 320, 70, 30), "Name:", self.font)
-        draw_text(self.window, pygame.Rect(470, 400, 400, 30), self.sign_message, self.font, self.verify_message_color)
+        draw_text(self.window, pygame.Rect(470, 400, 400, 30), self.sign_message, self.font, self.sign_message_color)
 
     def draw_buttons(self):
         for button in self.buttons:
