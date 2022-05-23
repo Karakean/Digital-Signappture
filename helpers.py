@@ -3,8 +3,8 @@ import tkinter
 import tkinter.filedialog
 
 
-def draw_text(window, rect, text, font):
-    text = font.render(text, True, (160, 160, 160))
+def draw_text(window, rect, text, font, color=(160, 160, 160)):
+    text = font.render(text, True, color)
     text_rect = text.get_rect(center=rect.center)
     window.blit(text, text_rect)
 
