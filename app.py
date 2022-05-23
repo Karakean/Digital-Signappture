@@ -1,14 +1,15 @@
 import datetime
-import pygame
+
 from cryptography import x509
 from cryptography.hazmat._oid import NameOID, ExtensionOID
-from cryptography.hazmat.primitives.serialization import load_pem_private_key, load_pem_public_key, pkcs7
+from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import serialization, hashes
 from cryptography.hazmat.primitives.asymmetric import rsa, padding
-from cryptography.hazmat.backends import default_backend
+from cryptography.hazmat.primitives.serialization import load_pem_private_key
+
 from button import Button
-from textbox import Textbox
 from helpers import *
+from textbox import Textbox
 
 
 class App:
@@ -19,9 +20,11 @@ class App:
 
         self.verify_file = None
         self.certificate = None
+        self.certificate_path = None
         self.sign_file = None
         self.sign_key = None
-        self.text_file1 = None
+        self.key_path = None
+        self.text_content = None
         self.verify_message = ""
         self.verify_message_color = (0, 200, 0)
         self.sign_message = ""
@@ -55,6 +58,11 @@ class App:
                     self.type(event)
             pygame.display.update()
 
+    def shorter_file_format(self, filepath):
+        index = filepath.rfind('/')
+        filename = filepath[index + 1:]
+        return filename
+
     def draw_verification(self):
         title_box = pygame.Rect(20, 10, 400, 70)
         file_box = pygame.Rect(20, 80, 400, 70)
@@ -63,9 +71,10 @@ class App:
         draw_text(self.window, title_box, "Verify a document", pygame.font.SysFont("Arial", 30))
         pygame.draw.rect(self.window, (70, 70, 70), file_box)
         pygame.draw.rect(self.window, (70, 70, 70), key_box)
-        draw_text(self.window, file_box, self.verify_file if self.verify_file else "No file selected", self.font)
-        draw_text(self.window, key_box, "Certificate selected" if self.certificate else "No certificate selected",
-                  self.font)
+        draw_text(self.window, file_box, self.shorter_file_format(self.verify_file) if self.verify_file else
+        "No file selected", self.font)
+        draw_text(self.window, key_box, self.shorter_file_format(self.certificate_path) if self.certificate else
+        "No certificate selected", self.font)
         draw_text(self.window, pygame.Rect(20, 200, 100, 30), "Certificate:", self.font)
         draw_text(self.window, pygame.Rect(20, 400, 400, 30), self.verify_message, self.font, self.verify_message_color)
 
@@ -77,8 +86,10 @@ class App:
         draw_text(self.window, title_box, "Sign a document", pygame.font.SysFont("Arial", 30))
         pygame.draw.rect(self.window, (70, 70, 70), file_box)
         pygame.draw.rect(self.window, (70, 70, 70), key_box)
-        draw_text(self.window, file_box, self.sign_file if self.sign_file else "No file selected", self.font)
-        draw_text(self.window, key_box, "Private key selected" if self.sign_key else "No key selected", self.font)
+        draw_text(self.window, file_box, self.shorter_file_format(self.sign_file) if self.sign_file else
+        "No file selected", self.font)
+        draw_text(self.window, key_box, self.shorter_file_format(self.key_path) if self.sign_key else
+        "No key selected", self.font)
         draw_text(self.window, pygame.Rect(470, 200, 100, 30), "Private key:", self.font)
         draw_text(self.window, pygame.Rect(470, 320, 70, 30), "Name:", self.font)
         draw_text(self.window, pygame.Rect(470, 400, 400, 30), self.sign_message, self.font, self.verify_message_color)
@@ -107,11 +118,11 @@ class App:
             elif (event.unicode.isalnum() or event.unicode == ' ' or event.unicode == '-') and len(
                     self.textbox.text) <= 30:
                 self.textbox.text += event.unicode
-            self.text_file1 = self.textbox.text
+            self.text_content = self.textbox.text
 
     def create_certificate(self, key):
         subject = issuer = x509.Name([
-            x509.NameAttribute(NameOID.COMMON_NAME, self.text_file1)
+            x509.NameAttribute(NameOID.COMMON_NAME, self.text_content)
         ])
         cert = x509.CertificateBuilder().subject_name(
             subject
@@ -143,25 +154,25 @@ class App:
             f.write(cert.public_bytes(serialization.Encoding.PEM))
 
     def sign(self):
-        if self.sign_key and self.text_file1:
+        if self.sign_key and self.text_content:
             key = load_pem_private_key(self.sign_key, password=None)
             if isinstance(key, rsa.RSAPrivateKey):
                 self.create_certificate(key)
-                file1 = open(self.sign_file).read()
+                content = bytes(open(self.sign_file, "r").read(), "utf-8")
                 signature = key.sign(
-                    bytes(file1, 'utf-8'),
+                    content,
                     padding.PSS(
                         mgf=padding.MGF1(hashes.SHA256()),
                         salt_length=padding.PSS.MAX_LENGTH
                     ),
                     hashes.SHA256()
                 )
-                file = open("signed_file.sgn", "w")
-                file.write("-----BEGIN SIGNATURE-----\n")
-                file.write(str(signature))
-                file.write("\n-----END SIGNATURE-----\n")
-                file.write(file1)
-                file.close()
+                file1 = open("signed_file.sgn", "wb")
+                file1.write(bytes("-----BEGIN SIGNATURE-----\n", "utf-8"))
+                file1.write(signature)
+                file1.write(bytes("\n-----END SIGNATURE-----\n", "utf-8"))
+                file1.write(content)
+                file1.close()
                 self.sign_message = "File signed."
                 self.sign_message_color = (0, 200, 0)
             else:
@@ -180,24 +191,10 @@ class App:
                     valid = False  # We assume that key should only be used in digital signature
                 key = cert.public_key()
                 if isinstance(key, rsa.RSAPublicKey) and valid:
-                    file = open(self.verify_file, "r")
-                    signature = ""
-                    line = file.readline()
-                    line = file.readline()
-                    while "-----END SIGNATURE-----" not in line and line:
-                        #print(line)
-                        signature += line
-                        line = file.readline()
-                    signature = bytes(signature, 'utf-8')
-                    print(signature)
-                    line = file.readline()
-                    content = ""
-                    while line:
-                        content += line
-                        line = file.readline()
-                    print(content)
-                    content = bytes(content, 'utf-8')
-                    # signature = open("signed_file.sgn", "rb").read()
+                    content = open(self.verify_file, "rb").read()
+                    end_index = content.index(b'\n-----END SIGNATURE-----')
+                    signature = content[26:end_index]
+                    content = content[end_index + 25:]
                     try:
                         key.verify(
                             signature,
@@ -221,7 +218,7 @@ class App:
                 self.verify_message_color = (200, 0, 0)
 
     def chosen_verification_file(self):
-        self.verify_file = chosen_file()
+        self.verify_file = chosen_file((("sgn", "*.sgn"),))
 
     def chosen_signing_file(self):
         self.sign_file = chosen_file()
@@ -230,11 +227,13 @@ class App:
         result = chosen_file((("pem", "*.pem"),))
         if result:
             self.certificate = open(result, "rb").read()
+            self.certificate_path = result
 
     def chosen_signing_key(self):
         result = chosen_file((("pvk", "*.pvk"),))
         if result:
             self.sign_key = open(result, "rb").read()
+            self.key_path = result
 
     def generate_key(self):
         key = rsa.generate_private_key(
@@ -252,4 +251,4 @@ class App:
         file_out.close()
         self.sign_message = "Key generated."
         self.sign_message_color = (0, 200, 0)
-        self.sign_key = private_key
+        #self.sign_key = private_key
