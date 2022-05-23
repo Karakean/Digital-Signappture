@@ -30,11 +30,11 @@ class App:
         self.sign_message = ""
         self.sign_message_color = (0, 200, 0)
 
-        button1 = Button(self.window, 20, 160, 100, 30, "select file", self.chosen_verification_file)
-        button2 = Button(self.window, 470, 160, 100, 30, "select file", self.chosen_signing_file)
-        button3 = Button(self.window, 20, 280, 100, 30, "select key", self.chosen_certificate)
-        button4 = Button(self.window, 470, 280, 100, 30, "select key", self.chosen_signing_key)
-        button5 = Button(self.window, 580, 280, 120, 30, "generate key", self.generate_key)
+        button1 = Button(self.window, 20, 160, 130, 30, "select file", self.chosen_verification_file)
+        button2 = Button(self.window, 470, 160, 130, 30, "select file", self.chosen_signing_file)
+        button3 = Button(self.window, 20, 280, 130, 30, "select certificate", self.chosen_certificate)
+        button4 = Button(self.window, 470, 280, 130, 30, "select key", self.chosen_signing_key)
+        button5 = Button(self.window, 610, 280, 130, 30, "generate key", self.generate_key)
         button6 = Button(self.window, 20, 360, 400, 30, "verify", self.verify)
         button7 = Button(self.window, 470, 360, 400, 30, "sign", self.sign)
         self.textbox = Textbox(self.window, 470, 320, 400, 30)
