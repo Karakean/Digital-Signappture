@@ -21,6 +21,7 @@ class App:
         self.certificate = None
         self.signed_file = None
         self.sign_key = None
+        self.text_content = None
 
         button1 = Button(self.window, 20, 160, 100, 30, "select file", self.chosen_verification_file)
         button2 = Button(self.window, 470, 160, 100, 30, "select file", self.chosen_signing_file)
@@ -29,10 +30,8 @@ class App:
         button5 = Button(self.window, 580, 280, 120, 30, "generate key", self.generate_key)
         button6 = Button(self.window, 20, 430, 400, 30, "verify", self.verify)
         button7 = Button(self.window, 470, 430, 400, 30, "sign", self.sign)
-        textbox1 = Textbox(self.window, 20, 330, 400, 30)
-        textbox2 = Textbox(self.window, 470, 330, 400, 30)
+        self.textbox = Textbox(self.window, 470, 330, 400, 30)
         self.buttons = [button1, button2, button3, button4, button5, button6, button7]
-        self.text_boxes = [textbox1, textbox2]
 
     def run(self):
         pygame.display.set_caption("File signature project")
@@ -40,7 +39,7 @@ class App:
         while True:
             self.window.fill((30, 30, 30))
             self.draw_buttons()
-            self.draw_text_boxes()
+            self.textbox.draw()
             self.draw_verification()
             self.draw_signing()
             for event in pygame.event.get():
@@ -64,7 +63,6 @@ class App:
         draw_text(self.window, key_box, "Certificate selected" if self.certificate else "No certificate selected",
                   self.font)
         draw_text(self.window, pygame.Rect(20, 200, 100, 30), "Certificate:", self.font)
-        draw_text(self.window, pygame.Rect(20, 330, 70, 30), "Name:", self.font)
 
     def draw_signing(self):
         title_box = pygame.Rect(470, 10, 400, 70)
@@ -77,6 +75,7 @@ class App:
         draw_text(self.window, file_box, self.signed_file if self.signed_file else "No file selected", self.font)
         draw_text(self.window, key_box, "Private key selected" if self.sign_key else "No key selected", self.font)
         draw_text(self.window, pygame.Rect(470, 200, 100, 30), "Private key:", self.font)
+        draw_text(self.window, pygame.Rect(470, 330, 70, 30), "Name:", self.font)
 
     def draw_buttons(self):
         for button in self.buttons:
@@ -86,32 +85,26 @@ class App:
                 button.hover = False
             button.draw()
 
-    def draw_text_boxes(self):
-        for textbox in self.text_boxes:
-            textbox.draw()
-
     def click(self):
         for button in self.buttons:
             if button.mouse_over(pygame.mouse.get_pos()):
                 button.func()
-        for textbox in self.text_boxes:
-            if textbox.mouse_over(pygame.mouse.get_pos()):
-                textbox.active = True
-            else:
-                textbox.active = False
+        if self.textbox.mouse_over(pygame.mouse.get_pos()):
+            self.textbox.active = True
+        else:
+            self.textbox.active = False
 
     def type(self, event):
-        for textbox in self.text_boxes:
-            if textbox.active:
-                if event.key == pygame.K_BACKSPACE:
-                    textbox.text = textbox.text[:-1]
-                elif len(event.unicode) != 0 and len(textbox.text) <= 30:
-                    if 32 <= ord(event.unicode) <= 126:
-                        textbox.text += event.unicode
+        if self.textbox.active:
+            if event.key == pygame.K_BACKSPACE:
+                self.textbox.text = self.textbox.text[:-1]
+            elif (event.unicode.isalnum() or event.unicode == ' ' or event.unicode == '-') and len(self.textbox.text) <= 30:
+                self.textbox.text += event.unicode
+            self.text_content = self.textbox.text
 
     def create_certificate(self, key):
         subject = issuer = x509.Name([
-            x509.NameAttribute(NameOID.COMMON_NAME, u"MNMWJW")
+            x509.NameAttribute(NameOID.COMMON_NAME, self.text_content)
         ])
         cert = x509.CertificateBuilder().subject_name(
             subject
@@ -143,20 +136,24 @@ class App:
             f.write(cert.public_bytes(serialization.Encoding.PEM))
 
     def sign(self):
-        if self.sign_key: # and every field is not empty; TODO
+        if self.sign_key and self.text_content:
             key = load_pem_private_key(self.sign_key, password=None)
             if isinstance(key, rsa.RSAPrivateKey):
                 self.create_certificate(key)
+                content = bytes(open(self.signed_file).read(), 'utf-8')
                 signature = key.sign(
-                    bytes(open(self.signed_file).read(), 'utf-8'),
+                    content,
                     padding.PSS(
                         mgf=padding.MGF1(hashes.SHA256()),
                         salt_length=padding.PSS.MAX_LENGTH
                     ),
                     hashes.SHA256()
                 )
-                file = open("signature.sgn", "wb")
+                file = open("signed_file.sgn", "wb")
+                #file.write(bytes("-----BEGIN SIGNATURE-----\n", 'utf-8'))
                 file.write(signature)
+                #file.write(bytes("\n-----END SIGNATURE-----\n", 'utf-8'))
+                file.write(content)
                 file.close()
                 print("File signed.")
             else:
@@ -174,7 +171,7 @@ class App:
             key = cert.public_key()
             if isinstance(key, rsa.RSAPublicKey) and valid:
                 message = open(self.verify_file, "rb").read()
-                signature = open("signature.sgn", "rb").read()
+                signature = open("signed_file.sgn", "rb").read()
                 try:
                     key.verify(
                         signature,
