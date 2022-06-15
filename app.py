@@ -154,12 +154,54 @@ class App:
             f.write(cert.public_bytes(serialization.Encoding.PEM))
 
     def sign(self):
-        if self.sign_key and self.text_content:
-            key = load_pem_private_key(self.sign_key, password=None)
-            if isinstance(key, rsa.RSAPrivateKey):
-                self.create_certificate(key)
-                content = bytes(open(self.sign_file, "r").read(), "utf-8")
-                signature = key.sign(
+        if not (self.sign_key and self.text_content):
+            return
+        key = load_pem_private_key(self.sign_key, password=None)
+        if not isinstance(key, rsa.RSAPrivateKey):
+            self.sign_message = "Choose a valid private key."
+            self.sign_message_color = (200, 0, 0)
+            return
+        self.create_certificate(key)
+        content = bytes(open(self.sign_file, "r").read(), "utf-8")
+        signature = key.sign(
+            content,
+            padding.PSS(
+                mgf=padding.MGF1(hashes.SHA256()),
+                salt_length=padding.PSS.MAX_LENGTH
+            ),
+            hashes.SHA256()
+        )
+        file1 = open("signed_file.sgn", "wb")
+        file1.write(bytes("-----BEGIN SIGNATURE-----\n", "utf-8"))
+        file1.write(signature)
+        file1.write(bytes("\n-----END SIGNATURE-----\n", "utf-8"))
+        file1.write(content)
+        file1.close()
+        self.sign_message = "File signed."
+        self.sign_message_color = (0, 200, 0)
+           
+
+    def verify(self):
+        if not self.certificate:
+            return
+        try:
+            cert = x509.load_pem_x509_certificate(self.certificate)
+            valid = True
+            cert_usage = str(cert.extensions.get_extension_for_oid(oid=ExtensionOID.KEY_USAGE).value)
+            if cert_usage != "<KeyUsage(digital_signature=True, content_commitment=False, key_encipherment=False, " \
+                                "data_encipherment=False, key_agreement=False, key_cert_sign=False, crl_sign=False, " \
+                                "encipher_only=False, decipher_only=False)>":
+                valid = False  # We assume that key should only be used in digital signature
+            key = cert.public_key()
+            if not (isinstance(key, rsa.RSAPublicKey) and valid):
+                raise Exception
+            content = open(self.verify_file, "rb").read()
+            end_index = content.index(b'\n-----END SIGNATURE-----')
+            signature = content[26:end_index]
+            content = content[end_index + 25:]
+            try:
+                key.verify(
+                    signature,
                     content,
                     padding.PSS(
                         mgf=padding.MGF1(hashes.SHA256()),
@@ -167,55 +209,15 @@ class App:
                     ),
                     hashes.SHA256()
                 )
-                file1 = open("signed_file.sgn", "wb")
-                file1.write(bytes("-----BEGIN SIGNATURE-----\n", "utf-8"))
-                file1.write(signature)
-                file1.write(bytes("\n-----END SIGNATURE-----\n", "utf-8"))
-                file1.write(content)
-                file1.close()
-                self.sign_message = "File signed."
-                self.sign_message_color = (0, 200, 0)
-            else:
-                self.sign_message = "Choose a valid private key."
-                self.sign_message_color = (200, 0, 0)
-
-    def verify(self):
-        if self.certificate:
-            try:
-                cert = x509.load_pem_x509_certificate(self.certificate)
-                valid = True
-                cert_usage = str(cert.extensions.get_extension_for_oid(oid=ExtensionOID.KEY_USAGE).value)
-                if cert_usage != "<KeyUsage(digital_signature=True, content_commitment=False, key_encipherment=False, " \
-                                 "data_encipherment=False, key_agreement=False, key_cert_sign=False, crl_sign=False, " \
-                                 "encipher_only=False, decipher_only=False)>":
-                    valid = False  # We assume that key should only be used in digital signature
-                key = cert.public_key()
-                if isinstance(key, rsa.RSAPublicKey) and valid:
-                    content = open(self.verify_file, "rb").read()
-                    end_index = content.index(b'\n-----END SIGNATURE-----')
-                    signature = content[26:end_index]
-                    content = content[end_index + 25:]
-                    try:
-                        key.verify(
-                            signature,
-                            content,
-                            padding.PSS(
-                                mgf=padding.MGF1(hashes.SHA256()),
-                                salt_length=padding.PSS.MAX_LENGTH
-                            ),
-                            hashes.SHA256()
-                        )
-                        name = cert.issuer.get_attributes_for_oid(oid=NameOID.COMMON_NAME).pop().value
-                        self.verify_message = "Signature is valid. Signed by: " + str(name)
-                        self.verify_message_color = (0, 200, 0)
-                    except:
-                        self.verify_message = "Signature is invalid."
-                        self.verify_message_color = (200, 0, 0)
-                else:
-                    raise Exception
+                name = cert.issuer.get_attributes_for_oid(oid=NameOID.COMMON_NAME).pop().value
+                self.verify_message = "Signature is valid. Signed by: " + str(name)
+                self.verify_message_color = (0, 200, 0)
             except:
-                self.verify_message = "Invalid certificate."
+                self.verify_message = "Signature is invalid."
                 self.verify_message_color = (200, 0, 0)
+        except:
+            self.verify_message = "Invalid certificate."
+            self.verify_message_color = (200, 0, 0)
 
     def chosen_verification_file(self):
         self.verify_file = chosen_file((("sgn", "*.sgn"),))
